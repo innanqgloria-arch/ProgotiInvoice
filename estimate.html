@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- PWA Manifest Link -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#ffffff">
+
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+    </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Estimate</title>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Global Styles */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { margin: 0; padding: 0; background: white; }
+    
+    .page-container input, .page-container textarea {
+      font-size: 12px !important;
+    }
+
+    @media screen {
+      body { background: #f3f4f6; padding: 20px; }
+      .page-container {
+        max-width: 210mm;
+        margin: 0 auto 20px auto;
+        padding: 10mm 10mm 10mm 20mm;
+        background: white;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      }
+      .original-document-container { display: block; margin-top: 50px; border-top: 2px dashed #000; padding-top: 20px; }
+    }
+    
+    @media print {
+      @page { size: A4 portrait; margin: 0; }
+      html, body {
+        width: 210mm;
+        height: auto;
+        margin: 0; padding: 0; background: white;
+        print-color-adjust: exact; -webkit-print-color-adjust: exact;
+      }
+      * { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
+      .no-print { display: none !important; }
+
+      .page-container {
+        width: 100%;
+        height: auto; 
+        max-width: none;
+        margin: 0;
+        padding: 10mm 10mm 10mm 20mm;
+        box-shadow: none !important;
+        page-break-inside: avoid;
+        page-break-after: always;
+      }
+      .page-container:last-of-type {
+          page-break-after: auto; 
+      }
+
+      tr, thead, tbody { page-break-inside: avoid; }
+      thead { display: table-header-group; }
+      
+      input, textarea { border: none !important; background: transparent !important; box-shadow: none !important; outline: none !important; }
+      .mobile-interface { display: none; }
+    }
+    
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; }
+    
+    /* MOBILE INTERFACE STYLES */
+    .mobile-interface { max-width: 450px; margin: 0 auto; padding: 1rem; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 8px; border: 2px solid #3b82f6; }
+    .form-group { margin-bottom: 1rem; }
+    .form-label { display: block; font-weight: bold; margin-bottom: 0.25rem; font-size: 0.875rem; color: #1e40af; }
+    .form-input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; transition: border-color 0.2s; }
+    .form-input:focus { border-color: #f97316; outline: none; box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2); }
+    .item-row { display: flex; gap: 0.5rem; align-items: flex-end; margin-bottom: 0.75rem; padding: 0.75rem; border: 1px solid #fed7aa; border-radius: 4px; flex-wrap: wrap; background-color: #fff7ed; }
+    .item-col { flex: 1; min-width: 100px; }
+    .item-col.full-width { flex: 1 1 100%; }
+    .toggles-container { flex: 1 1 100%; display: flex; gap: 1rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #fed7aa; }
+    .toggles-container label { display: flex; align-items: center; gap: 0.25rem; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const ITEMS_PER_PAGE = 19; 
+
+    const formatDateToDDMMYYYY = (isoDate) => {
+      if (!isoDate || isoDate.length !== 10) return '';
+      if (isoDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const [year, month, day] = isoDate.split('-');
+          return `${day}/${month}/${year}`;
+      }
+      return ''; 
+    };
+    
+    function MobileDataEntry({ data, items, onDataChange, onItemUpdate, onItemToggle }) {
+        const updateData = (e) => onDataChange({ documentData: { [e.target.name]: e.target.value } });
+        const updateItem = (id, field, value) => onItemUpdate(id, field, value);
+        const addItem = () => onDataChange({ items: [...items, { id: Date.now(), quantity: '', description: '', rate: '', amount: '', drill: false, pipe: false, oval: false }] });
+        const removeItem = (id) => { if (items.length > 1) { onDataChange({ items: items.filter(item => item.id !== id) }); } };
+
+        return (
+            <div className="mobile-interface no-print">
+                <h2 className="text-xl font-bold mb-4 text-blue-700">📱 Mobile Data Entry</h2>
+                <div className="form-group"><label className="form-label">Company Name</label><input name="companyName" value={data.companyName} onChange={updateData} className="form-input" /></div>
+                <div className="form-group"><label className="form-label">Customer Name</label><input name="customerName" value={data.customerName} onChange={updateData} className="form-input" /></div>
+                <div className="form-group"><label className="form-label">Date</label><input name="date" type="date" value={data.date} onChange={updateData} className="form-input" /><p className="text-xs text-gray-500 mt-1">Current Value: **{formatDateToDDMMYYYY(data.date)}**</p></div>
+                
+                <h3 className="text-lg font-bold mt-6 mb-3 text-blue-700 border-b border-blue-300 pb-1">Items ({items.length})</h3>
+                {items.map((item, index) => (
+                    <div key={item.id} className="item-row">
+                        <h4 className="font-semibold text-sm mb-2 item-col full-width text-orange-700">Item {index + 1}</h4>
+                        <div className="item-col"><label className="form-label">Qty</label><input type="text" value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value)} className="form-input" /></div>
+                        <div className="item-col"><label className="form-label">Rate (Rs.)</label><input type="number" value={item.rate} onChange={(e) => updateItem(item.id, 'rate', e.target.value)} className="form-input" /></div>
+                        <div className="item-col full-width"><label className="form-label">Description</label><textarea value={item.description} onChange={(e) => updateItem(item.id, 'description', e.target.value)} className="form-input" rows="2"></textarea></div>
+                        
+                        <div className="toggles-container">
+                            <label><input type="checkbox" checked={item.drill} onChange={() => onItemToggle(item.id, 'drill')} /> Drill</label>
+                            <label><input type="checkbox" checked={item.pipe} onChange={() => onItemToggle(item.id, 'pipe')} /> Pipe</label>
+                            <label><input type="checkbox" checked={item.oval} onChange={() => onItemToggle(item.id, 'oval')} /> Oval</label>
+                        </div>
+                        
+                        <div className="item-col full-width flex justify-between items-center text-sm mt-2">
+                            <p className="font-bold text-blue-800">Amount: ₹ {item.amount === '' ? '' : (parseFloat(item.amount) || 0).toFixed(2)}</p>
+                            {items.length > 1 && (<button onClick={() => removeItem(item.id)} className="text-orange-600 font-bold px-3 py-1 border border-orange-600 rounded hover:bg-orange-100 transition duration-150">Remove</button>)}
+                        </div>
+                    </div>
+                ))}
+                <button onClick={addItem} className="w-full bg-blue-600 text-white font-bold py-2 rounded mt-3 hover:bg-blue-700 transition duration-150">+ Add New Item ({items.length})</button>
+                <div className="mt-8 text-center"><p className="text-sm font-semibold text-gray-700">Scroll down to view and **edit** the rendered document.</p></div>
+            </div>
+        );
+    }
+    
+    function DocumentGenerator({ data, items, onDataChange, onItemUpdate }) {
+      const updateData = (e) => {
+          const { name, value } = e.target;
+          onDataChange({ documentData: { [name]: value } });
+      };
+      const updateItem = (id, field, value) => onItemUpdate(id, field, value);
+      
+      const calculateTotal = () => {
+        return items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+      };
+      const totalAmount = calculateTotal();
+
+      const itemChunks = [];
+      for (let i = 0; i < items.length; i += ITEMS_PER_PAGE) {
+          itemChunks.push(items.slice(i, i + ITEMS_PER_PAGE));
+      }
+      if (itemChunks.length === 0) {
+          itemChunks.push([]);
+      }
+
+      return (
+        <div>
+          {itemChunks.map((pageItems, pageIndex) => {
+            const isLastPage = pageIndex === itemChunks.length - 1;
+            let emptyRowsCount = 0;
+            if (isLastPage) {
+                emptyRowsCount = Math.max(0, ITEMS_PER_PAGE - pageItems.length);
+            }
+            return (
+              <div key={`page-${pageIndex}`} className="page-container" style={{fontSize: '12px'}}>
+                <div className="document-content-wrapper">
+                  <header className="mb-4">
+                    <input name="companyName" value={data.companyName} onChange={updateData} className="w-full text-2xl font-bold mb-2 p-1 focus:outline-none text-center" />
+                    <div className="flex justify-between border-b-2 border-black pb-2">
+                        <div className="flex items-baseline gap-2">
+                            <label className="font-bold">Customer:</label>
+                            <input name="customerName" value={data.customerName} onChange={updateData} className="border-b border-gray-600 focus:outline-none p-1 flex-grow"/>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                            <label className="font-bold">Date:</label>
+                            <input name="date" value={formatDateToDDMMYYYY(data.date)} onChange={updateData} className="border-b border-gray-600 focus:outline-none p-1"/>
+                        </div>
+                    </div>
+                  </header>
+
+                  <table className="w-full border-2 border-black">
+                    <thead>
+                      <tr className="border-b-2 border-black bg-gray-100">
+                        <th className="border-r-2 border-black p-2 text-center font-bold" style={{width: '15%'}}>Quantity</th>
+                        <th className="border-r-2 border-black p-2 text-center font-bold" style={{width: '55%'}}>Description of Goods</th>
+                        <th className="border-r-2 border-black p-2 text-center font-bold" style={{width: '15%'}}>Rate<br/>(Rs.)</th>
+                        <th className="p-2 text-center font-bold" style={{width: '15%'}}>Amount<br/>(Rs.)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-black" style={{height: '38px'}}>
+                        <td className="border-r-2 border-black p-2 align-top pt-2 text-center italic">Nos</td>
+                        <td className="border-r-2 border-black p-2 align-top pt-2">&nbsp;</td>
+                        <td className="border-r-2 border-black p-2 align-top pt-2 text-center italic">Each</td>
+                        <td className="p-2 align-top pt-2">&nbsp;</td>
+                      </tr>
+                      {pageItems.map((item) => (
+                        <tr key={item.id} className="border-b border-black" style={{height: '38px'}}>
+                          <td className="border-r-2 border-black p-2 align-top pt-2"><input value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value)} className="w-full focus:outline-none"/></td>
+                          <td className="border-r-2 border-black p-2 align-top pt-2"><textarea value={item.description} onChange={(e) => updateItem(item.id, 'description', e.target.value)} className="w-full focus:outline-none leading-tight resize-none"/></td>
+                          <td className="border-r-2 border-black p-2 align-top pt-2 text-right"><input type="number" value={item.rate} onChange={(e) => updateItem(item.id, 'rate', e.target.value)} className="w-full focus:outline-none text-right"/></td>
+                          <td className="p-2 align-top pt-2 text-right"><span className="font-semibold">{item.amount === '' ? '' : (parseFloat(item.amount) || 0).toFixed(2)}</span></td>
+                        </tr>
+                      ))}
+                      {Array.from({ length: emptyRowsCount }).map((_, index) => (
+                        <tr key={`empty-${index}`} className="border-b border-black" style={{height: '38px'}}>
+                          <td className="border-r-2 border-black p-1">&nbsp;</td>
+                          <td className="border-r-2 border-black p-1">&nbsp;</td>
+                          <td className="border-r-2 border-black p-1">&nbsp;</td>
+                          <td className="p-1">&nbsp;</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  {isLastPage && (
+                    <footer className="mt-4">
+                      <div className="flex justify-end">
+                        <table className="w-1/3">
+                          <tbody>
+                            <tr className="border-y-2 border-black font-bold">
+                              <td className="p-2">TOTAL:</td>
+                              <td className="p-2 text-right">Rs. {totalAmount.toFixed(2)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="flex justify-end mt-24">
+                        <div className="text-center" style={{minWidth: '200px'}}>
+                          <div className="border-t-2 border-black pt-2">
+                            <p className="font-semibold">Signature</p>
+                          </div>
+                        </div>
+                      </div>
+                    </footer>
+                  )}
+                  <div className="text-center text-xs text-gray-500 pt-2 no-print">
+                      Page {pageIndex + 1} of {itemChunks.length}
+                  </div>
+                </div>
+                {isLastPage && (<div className="p-4 text-center no-print"><button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 font-bold">Print Document</button></div>)}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+    
+    function App() {
+        const [documentState, setDocumentState] = useState({
+            documentData: {
+                companyName: 'YOUR COMPANY NAME',
+                customerName: '',
+                date: '', 
+            },
+            items: [{ id: 1, quantity: '', description: '', rate: '', amount: '', drill: false, pipe: false, oval: false }]
+        });
+        const handleDataChange = (newData) => { setDocumentState(prev => ({ ...prev, documentData: newData.documentData ? { ...prev.documentData, ...newData.documentData } : prev.documentData, items: newData.items || prev.items })); };
+        const handleItemUpdate = (id, field, value) => {
+            const newItems = documentState.items.map(item => {
+              if (item.id === id) {
+                const updated = { ...item, [field]: value };
+                const qty = parseFloat(updated.quantity) || 0;
+                const rate = parseFloat(updated.rate) || 0;
+                updated.amount = (qty > 0 && rate > 0) ? qty * rate : '';
+                if (field === 'rate' && value === '') updated.rate = '';
+                return updated;
+              }
+              return item;
+            });
+            setDocumentState(prev => ({ ...prev, items: newItems }));
+        };
+        
+        const handleItemToggle = (itemId, toggleName) => {
+            setDocumentState(prev => {
+                const newItems = prev.items.map(item => {
+                    if (item.id === itemId) {
+                        const updatedItem = { ...item };
+                        const toggleTextMap = {
+                            drill: ' (Drill)',
+                            pipe: ' (Pipe)',
+                            oval: ' (Oval)'
+                        };
+                        const toggleText = toggleTextMap[toggleName];
+                        
+                        updatedItem[toggleName] = !item[toggleName];
+
+                        if (updatedItem[toggleName]) {
+                            if (!item.description.includes(toggleText)) {
+                                updatedItem.description = item.description + toggleText;
+                            }
+                        } else {
+                            updatedItem.description = item.description.replace(toggleText, '');
+                        }
+                        return updatedItem;
+                    }
+                    return item;
+                });
+                return { ...prev, items: newItems };
+            });
+        };
+
+        return (
+            <div>
+                <MobileDataEntry 
+                    data={documentState.documentData} 
+                    items={documentState.items} 
+                    onDataChange={handleDataChange} 
+                    onItemUpdate={handleItemUpdate}
+                    onItemToggle={handleItemToggle}
+                />
+                <div className="original-document-container">
+                    <DocumentGenerator 
+                        data={documentState.documentData} 
+                        items={documentState.items} 
+                        onDataChange={handleDataChange} 
+                        onItemUpdate={handleItemUpdate}
+                    />
+                </div>
+            </div>
+        );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
