@@ -70,7 +70,6 @@
           page-break-after: auto; 
       }
 
-      /* THE FIX: Only avoid page breaks inside rows, not the entire table body */
       tr { page-break-inside: avoid; }
       thead { display: table-header-group; }
       
@@ -101,7 +100,8 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    const ITEMS_PER_PAGE = 17;
+    const ITEMS_PER_PAGE_FIRST = 17;
+    const ITEMS_PER_PAGE_SUBSEQUENT = 19;
 
     const formatDateToDDMMYYYY = (isoDate) => {
       if (!isoDate || isoDate.length !== 10) return '';
@@ -164,8 +164,13 @@
       const totalAmount = calculateTotal();
 
       const itemChunks = [];
-      for (let i = 0; i < items.length; i += ITEMS_PER_PAGE) {
-          itemChunks.push(items.slice(i, i + ITEMS_PER_PAGE));
+      if (items.length > 0) {
+          itemChunks.push(items.slice(0, ITEMS_PER_PAGE_FIRST));
+          let remainingItems = items.slice(ITEMS_PER_PAGE_FIRST);
+          while (remainingItems.length > 0) {
+              itemChunks.push(remainingItems.slice(0, ITEMS_PER_PAGE_SUBSEQUENT));
+              remainingItems = remainingItems.slice(ITEMS_PER_PAGE_SUBSEQUENT);
+          }
       }
       if (itemChunks.length === 0) {
           itemChunks.push([]);
@@ -174,10 +179,12 @@
       return (
         <div>
           {itemChunks.map((pageItems, pageIndex) => {
+            const isFirstPage = pageIndex === 0;
             const isLastPage = pageIndex === itemChunks.length - 1;
             let emptyRowsCount = 0;
             if (isLastPage) {
-                emptyRowsCount = Math.max(0, ITEMS_PER_PAGE - pageItems.length);
+                const targetCount = isFirstPage ? ITEMS_PER_PAGE_FIRST : ITEMS_PER_PAGE_SUBSEQUENT;
+                emptyRowsCount = Math.max(0, targetCount - pageItems.length);
             }
             return (
               <div key={`page-${pageIndex}`} className="page-container" style={{fontSize: '12px'}}>
@@ -206,12 +213,14 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="border-b border-black" style={{height: '38px'}}>
-                        <td className="border-r-2 border-black p-2 align-top pt-2 text-center italic">Nos</td>
-                        <td className="border-r-2 border-black p-2 align-top pt-2">&nbsp;</td>
-                        <td className="border-r-2 border-black p-2 align-top pt-2 text-center italic">Each</td>
-                        <td className="p-2 align-top pt-2">&nbsp;</td>
-                      </tr>
+                      {isFirstPage && (
+                        <tr className="border-b border-black" style={{height: '38px'}}>
+                          <td className="border-r-2 border-black p-2 align-top pt-2 text-center italic">Nos</td>
+                          <td className="border-r-2 border-black p-2 align-top pt-2">&nbsp;</td>
+                          <td className="border-r-2 border-black p-2 align-top pt-2 text-center italic">Each</td>
+                          <td className="p-2 align-top pt-2">&nbsp;</td>
+                        </tr>
+                      )}
                       {pageItems.map((item) => (
                         <tr key={item.id} className="border-b border-black" style={{height: '38px'}}>
                           <td className="border-r-2 border-black p-2 align-top pt-2"><input value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value)} className="w-full focus:outline-none"/></td>
