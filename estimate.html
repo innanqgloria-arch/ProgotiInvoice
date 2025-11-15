@@ -38,7 +38,7 @@
       .page-container {
         max-width: 210mm;
         margin: 0 auto 20px auto;
-        padding: 10mm 10mm 10mm 20mm;
+        padding: 15mm;
         background: white;
         box-shadow: 0 0 10px rgba(0,0,0,0.1);
       }
@@ -61,7 +61,7 @@
         height: auto; 
         max-width: none;
         margin: 0;
-        padding: 10mm 10mm 10mm 20mm;
+        padding: 15mm;
         box-shadow: none !important;
         page-break-inside: avoid;
         page-break-after: always;
@@ -101,7 +101,8 @@
     const { useState, useEffect } = React;
 
     const ITEMS_PER_PAGE_FIRST = 12;
-    const ITEMS_PER_PAGE_SUBSEQUENT = 13; 
+    // *** MODIFICATION: Set subsequent pages to also have 12 items ***
+    const ITEMS_PER_PAGE_SUBSEQUENT = 12; 
 
     const formatDateToDDMMYYYY = (isoDate) => {
       if (!isoDate || isoDate.length !== 10) return '';
@@ -188,6 +189,20 @@
           });
           runningTotal += pageTotal;
       }
+      
+      const handlePrint = () => {
+        const originalTitle = document.title;
+        const customerPart = data.customerName.trim().replace(/\s+/g, '_') || 'customer';
+        const datePart = data.date ? formatDateToDDMMYYYY(data.date).replace(/\//g, '-') : 'no-date';
+        
+        const newTitle = `Estimate-${customerPart}-${datePart}`;
+        document.title = newTitle;
+        
+        window.print();
+        
+        // Restore the original title after the print dialog is handled
+        document.title = originalTitle;
+      };
 
       return (
         <div>
@@ -277,11 +292,11 @@
                     </tfoot>
                   </table>
                   
-                  <div className="text-center text-xs text-gray-500 pt-2 no-print">
+                  <div className="text-center text-xs text-gray-500 pt-2">
                       Page {pageIndex + 1} of {pages.length}
                   </div>
                 </div>
-                {pageIndex === pages.length - 1 && (<div className="p-4 text-center no-print"><button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 font-bold">Print Document</button></div>)}
+                {pageIndex === pages.length - 1 && (<div className="p-4 text-center no-print"><button onClick={handlePrint} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 font-bold">Print Document</button></div>)}
               </div>
             );
           })}
