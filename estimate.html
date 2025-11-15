@@ -1,22 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- PWA Manifest Link -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#ffffff">
-
-    <!-- Service Worker Registration -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                }, err => {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
-            });
-        }
-    </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Simple Estimate</title>
@@ -100,8 +84,8 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    const ITEMS_PER_PAGE_FIRST = 17;
-    const ITEMS_PER_PAGE_SUBSEQUENT = 19;
+    const ITEMS_PER_PAGE_FIRST = 12;
+    const ITEMS_PER_PAGE_SUBSEQUENT = 13; 
 
     const formatDateToDDMMYYYY = (isoDate) => {
       if (!isoDate || isoDate.length !== 10) return '';
@@ -115,7 +99,7 @@
     function MobileDataEntry({ data, items, onDataChange, onItemUpdate, onItemToggle }) {
         const updateData = (e) => onDataChange({ documentData: { [e.target.name]: e.target.value } });
         const updateItem = (id, field, value) => onItemUpdate(id, field, value);
-        const addItem = () => onDataChange({ items: [...items, { id: Date.now(), quantity: '', description: '', rate: '', amount: '', drill: false, pipe: false, oval: false }] });
+        const addItem = () => onDataChange({ items: [...items, { id: Date.now(), quantity: '', description: '', rate: '', amount: '', drill: false, pipe: false, oval: false, bl: false }] });
         const removeItem = (id) => { if (items.length > 1) { onDataChange({ items: items.filter(item => item.id !== id) }); } };
 
         return (
@@ -137,6 +121,7 @@
                             <label><input type="checkbox" checked={item.drill} onChange={() => onItemToggle(item.id, 'drill')} /> Drill</label>
                             <label><input type="checkbox" checked={item.pipe} onChange={() => onItemToggle(item.id, 'pipe')} /> Pipe</label>
                             <label><input type="checkbox" checked={item.oval} onChange={() => onItemToggle(item.id, 'oval')} /> Oval</label>
+                            <label><input type="checkbox" checked={item.bl} onChange={() => onItemToggle(item.id, 'bl')} /> BL</label>
                         </div>
                         
                         <div className="item-col full-width flex justify-between items-center text-sm mt-2">
@@ -158,34 +143,43 @@
       };
       const updateItem = (id, field, value) => onItemUpdate(id, field, value);
       
-      const calculateTotal = () => {
-        return items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
-      };
-      const totalAmount = calculateTotal();
+      const pages = [];
+      let runningTotal = 0;
+      let itemsToProcess = [...items];
 
-      const itemChunks = [];
-      if (items.length > 0) {
-          itemChunks.push(items.slice(0, ITEMS_PER_PAGE_FIRST));
-          let remainingItems = items.slice(ITEMS_PER_PAGE_FIRST);
-          while (remainingItems.length > 0) {
-              itemChunks.push(remainingItems.slice(0, ITEMS_PER_PAGE_SUBSEQUENT));
-              remainingItems = remainingItems.slice(ITEMS_PER_PAGE_SUBSEQUENT);
-          }
+      if (itemsToProcess.length === 0) {
+          itemsToProcess.push({ id: 'empty', quantity: '', description: '', rate: '', amount: '' });
       }
-      if (itemChunks.length === 0) {
-          itemChunks.push([]);
+
+      // Page 1
+      const firstPageItems = itemsToProcess.splice(0, ITEMS_PER_PAGE_FIRST);
+      const firstPageTotal = firstPageItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+      pages.push({
+          pageItems: firstPageItems,
+          balanceForward: 0,
+          pageTotal: firstPageTotal,
+      });
+      runningTotal = firstPageTotal;
+
+      // Subsequent Pages
+      while (itemsToProcess.length > 0) {
+          const subsequentPageItems = itemsToProcess.splice(0, ITEMS_PER_PAGE_SUBSEQUENT);
+          const pageTotal = subsequentPageItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+          pages.push({
+              pageItems: subsequentPageItems,
+              balanceForward: runningTotal,
+              pageTotal: runningTotal + pageTotal,
+          });
+          runningTotal += pageTotal;
       }
 
       return (
         <div>
-          {itemChunks.map((pageItems, pageIndex) => {
+          {pages.map((page, pageIndex) => {
             const isFirstPage = pageIndex === 0;
-            const isLastPage = pageIndex === itemChunks.length - 1;
-            let emptyRowsCount = 0;
-            if (isLastPage) {
-                const targetCount = isFirstPage ? ITEMS_PER_PAGE_FIRST : ITEMS_PER_PAGE_SUBSEQUENT;
-                emptyRowsCount = Math.max(0, targetCount - pageItems.length);
-            }
+            const targetCount = isFirstPage ? ITEMS_PER_PAGE_FIRST : ITEMS_PER_PAGE_SUBSEQUENT;
+            const emptyRowsCount = Math.max(0, targetCount - page.pageItems.length);
+
             return (
               <div key={`page-${pageIndex}`} className="page-container" style={{fontSize: '12px'}}>
                 <div className="document-content-wrapper">
@@ -221,9 +215,17 @@
                           <td className="p-2 align-top pt-2">&nbsp;</td>
                         </tr>
                       )}
-                      {pageItems.map((item) => (
+                      {!isFirstPage && (
+                        <tr className="border-b border-black" style={{height: '38px'}}>
+                            <td className="border-r-2 border-black p-2 align-top pt-2">&nbsp;</td>
+                            <td className="border-r-2 border-black p-2 align-top pt-2 font-bold text-right">{`Balance forward from Page ${pageIndex}`}</td>
+                            <td className="border-r-2 border-black p-2 align-top pt-2">&nbsp;</td>
+                            <td className="p-2 align-top pt-2 text-right font-semibold">{page.balanceForward.toFixed(2)}</td>
+                        </tr>
+                      )}
+                      {page.pageItems.map((item) => (
                         <tr key={item.id} className="border-b border-black" style={{height: '38px'}}>
-                          <td className="border-r-2 border-black p-2 align-top pt-2"><input value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value)} className="w-full focus:outline-none"/></td>
+                          <td className="border-r-2 border-black p-2 align-top pt-2 text-right"><input value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value)} className="w-full focus:outline-none text-right"/></td>
                           <td className="border-r-2 border-black p-2 align-top pt-2"><textarea value={item.description} onChange={(e) => updateItem(item.id, 'description', e.target.value)} className="w-full focus:outline-none leading-tight resize-none"/></td>
                           <td className="border-r-2 border-black p-2 align-top pt-2 text-right"><input type="number" value={item.rate} onChange={(e) => updateItem(item.id, 'rate', e.target.value)} className="w-full focus:outline-none text-right"/></td>
                           <td className="p-2 align-top pt-2 text-right"><span className="font-semibold">{item.amount === '' ? '' : (parseFloat(item.amount) || 0).toFixed(2)}</span></td>
@@ -238,32 +240,32 @@
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                        <tr className="border-t-2 border-black">
+                            <td colSpan="2" className="p-2 align-bottom">
+                                <div className="text-left font-semibold pt-16">
+                                    Signature: <span className="border-b-2 border-black inline-block w-48">&nbsp;</span>
+                                </div>
+                            </td>
+                            <td colSpan="2" className="p-2 align-bottom">
+                                <table className="w-full">
+                                    <tbody>
+                                        <tr className="border-y-2 border-black font-bold">
+                                            <td className="p-2">TOTAL:</td>
+                                            <td className="p-2 text-right">Rs. {page.pageTotal.toFixed(2)}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    </tfoot>
                   </table>
                   
-                  {isLastPage && (
-                    <footer className="mt-8 flex justify-between items-end">
-                        <div className="text-center" style={{minWidth: '200px'}}>
-                            <div className="border-t-2 border-black pt-2 mt-12">
-                                <p className="font-semibold">Signature</p>
-                            </div>
-                        </div>
-                        <div style={{minWidth: '200px'}}>
-                            <table className="w-full">
-                                <tbody>
-                                    <tr className="border-y-2 border-black font-bold">
-                                        <td className="p-2">TOTAL:</td>
-                                        <td className="p-2 text-right">Rs. {totalAmount.toFixed(2)}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </footer>
-                  )}
                   <div className="text-center text-xs text-gray-500 pt-2 no-print">
-                      Page {pageIndex + 1} of {itemChunks.length}
+                      Page {pageIndex + 1} of {pages.length}
                   </div>
                 </div>
-                {isLastPage && (<div className="p-4 text-center no-print"><button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 font-bold">Print Document</button></div>)}
+                {pageIndex === pages.length - 1 && (<div className="p-4 text-center no-print"><button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 font-bold">Print Document</button></div>)}
               </div>
             );
           })}
@@ -278,7 +280,7 @@
                 customerName: '',
                 date: '', 
             },
-            items: [{ id: 1, quantity: '', description: '', rate: '', amount: '', drill: false, pipe: false, oval: false }]
+            items: [{ id: 1, quantity: '', description: '', rate: '', amount: '', drill: false, pipe: false, oval: false, bl: false }]
         });
         const handleDataChange = (newData) => { setDocumentState(prev => ({ ...prev, documentData: newData.documentData ? { ...prev.documentData, ...newData.documentData } : prev.documentData, items: newData.items || prev.items })); };
         const handleItemUpdate = (id, field, value) => {
@@ -304,7 +306,8 @@
                         const toggleTextMap = {
                             drill: ' (Drill)',
                             pipe: ' (Pipe)',
-                            oval: ' (Oval)'
+                            oval: ' (Oval)',
+                            bl: ' (BL)'
                         };
                         const toggleText = toggleTextMap[toggleName];
                         
@@ -315,7 +318,7 @@
                                 updatedItem.description = item.description + toggleText;
                             }
                         } else {
-                            updatedItem.description = item.description.replace(toggleText, '');
+                            updatedItem.description = item.description.replace(new RegExp(toggleText.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), '');
                         }
                         return updatedItem;
                     }
